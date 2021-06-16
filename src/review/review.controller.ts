@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  InternalServerErrorException,
   NotFoundException,
   Param,
   Patch,
@@ -11,30 +10,43 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
-  UploadedFile,
-  UseInterceptors,
+  UnauthorizedException
 } from '@nestjs/common';
 import { ReviewService } from './review.service';
-import { environment } from '../environments/environment';
 import { Request, Response } from 'express';
-import { CreateReviewDTO, Review, REVIEW_STATUS, UpdatePublishedReviewDTO, UpdateReviewDTO } from './review.schema';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { REVIEW_STATUS, ReviewDocument } from './review.schema';
 import { extname } from 'path';
-import { createHash } from 'crypto';
+import { AuthGuard } from '@nestjs/passport';
 import { DepositService } from '../deposit/deposit.service';
 import { UsersService } from '../users/users.service';
-import { Deposit, DEPOSIT_STATUS } from '../deposit/deposit.schema';
 import { EventService } from '../event/event.service';
 import { EVENT_TYPE } from '../event/event.schema';
-import { validateOrReject } from 'class-validator';
+import { Allow, validateOrReject } from 'class-validator';
 import { FilterQuery } from 'mongoose';
 import { InviteService } from '../invite/invite.service';
-import { User } from '../users/user.schema';
-import { IStorageService } from 'src/storage-service.interface';
-import { Inject } from '@nestjs/common';
+import { Auth0UserProfile } from 'auth0-js';
+import { CreateReviewDTO } from '../dtos/create-review.dto';
+import { UpdateReviewDTO } from '../dtos/update-review.dto';
+import { UpdatePublishedReviewDTO } from '../dtos/update-review-published.dto';
+import { ReviewDTO } from '../dtos/review.dto';
+import { plainToClassCustom } from '../utils/transformer';
+import { canDo, defineAbilityFor } from '../authorization/abilities';
+import { AuthorizationService } from '../authorization/authorization.service';
+import { LocalStorageService } from '../common/local-storage.service';
 
-const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.jpeg', '.jpg', '.png', '.gif', '.md', '.csv', '.tex'];
+const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.jpeg', '.jpg', '.png', '.gif', '.md', '.csv', '.tex', '.rtf'];
+
+class AppFile {
+  readonly lastModified!: number;
+  readonly name!: string;
+  readonly size!: number;
+  readonly type!: string;
+}
+
+class CreateFileDTO {
+  @Allow() file!: AppFile;
+  isMainFile?: boolean;
+}
 
 @Controller('reviews')
 export class ReviewController {
@@ -44,71 +56,84 @@ export class ReviewController {
     private readonly userService: UsersService,
     private readonly eventService: EventService,
     private readonly inviteService: InviteService,
-    @Inject('IStorageService') private readonly storageService: IStorageService,
+    private readonly storageService: LocalStorageService,
+    private readonly authorizationService: AuthorizationService
   ) {
   }
 
   @Get('')
-  async getReviews(
+  async reviews(
     @Req() req: Request,
     @Query('depositId') depositId: string,
-  ): Promise<Review[]> {
+    @Query('owner') owner: string
+  ): Promise<ReviewDTO[]> {
 
-    const query: FilterQuery<Review> = {
+    const query: FilterQuery<ReviewDocument> = {
       status: REVIEW_STATUS.published,
     };
 
-    if (depositId) {
-      query.deposit = depositId as any;
+    if (owner) {
+      query.owner = owner;
     }
-    return this.reviewService.reviewModel.find(query).lean();
+
+    if (depositId) {
+      query.deposit = depositId;
+    }
+
+    const reviews = await this.reviewService.find(query);
+    return plainToClassCustom(ReviewDTO, reviews);
   }
 
   @Get('myReviews')
   async getMyReviews(
     @Req() req: Request
-  ): Promise<Review[]> {
-    const user = await this.userService.findOne({});
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }    return this.reviewService.find({
-      owner: user.userId,
+  ): Promise<ReviewDTO[]> {
+    const auth0Profile = req.user as Auth0UserProfile;
+    const reviews = await this.reviewService.find({
+      owner: auth0Profile.sub,
     });
+    return plainToClassCustom(ReviewDTO, reviews);
   }
 
   @Get(':id')
-  async getReview(
+  async review(
     @Param('id') id: string,
     @Req() req: Request,
-  ): Promise<Review> {
-    const user = await this.userService.findOne({});
+  ): Promise<ReviewDTO> {
+    const auth0Profile = req.user as (Auth0UserProfile | undefined);
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
     const review = await this.reviewService.findById(id);
     if (!review) {
       throw new NotFoundException('Review not found');
     }
 
-    if (!this.canReadReview(user, review)) {
-      throw new UnauthorizedException();
-    }
+    const user = await this.userService.findOne({ userId: auth0Profile?.sub });
+    const ability = defineAbilityFor(user);
+    canDo(ability, 'read', review);
 
-    return review;
+    if (review.status === REVIEW_STATUS.draft && review.file) {
+      review.depopulate('deposit');
+      const objectKey = `${review.deposit}/${review._id}/${review.file.filename}`;
+      const params = {
+        Key: objectKey,
+        Expires: 60
+      };
+      const signedUrl = this.storageService.getSignedUrl('getObject', params);
+      review.file.presignedURL = signedUrl;
+    }
+    const reviewDTO = plainToClassCustom(ReviewDTO, review);
+    reviewDTO.actions = this.authorizationService.getSubjectActions(user, review);
+    return reviewDTO;
   }
 
   @Post('')
   async createReview(
     @Req() req: Request,
     @Body() newReview: CreateReviewDTO,
-  ): Promise<Review> {
-    const user = await this.userService.findOne({});
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }    const deposit = await this.depositService.findById(newReview.deposit);
+  ): Promise<ReviewDTO> {
+    const auth0Profile = req.user as Auth0UserProfile;
+    const user = await this.userService.findOne({ userId: auth0Profile.sub });
+    const deposit = await this.depositService.findById(newReview.deposit);
 
     if (!deposit) {
       throw new NotFoundException('Deposit not found');
@@ -118,21 +143,19 @@ export class ReviewController {
       throw new NotFoundException('User not found');
     }
 
-    if (!this.canCreateReview(user, deposit)) {
-      throw new UnauthorizedException();
+    if (!user.isReviewer) {
+      throw new UnauthorizedException('You need to be a reviewer');
     }
 
+    const ability = defineAbilityFor(user);
+    canDo(ability, 'review', deposit);
+
     // Check if reviewer was invited by the owner to review the publication
-    let wasInvited = false;
-    const invites = await this.inviteService.find({
-      data: {
-        depositId: newReview.deposit,
-      },
+    const wasInvited = await this.inviteService.exists({
+      'data.depositId': newReview.deposit,
       addressee: user.email
     });
-    if (invites.length > 0) {
-      wasInvited = true;
-    }
+
 
     // Create review
     const review = new this.reviewService.reviewModel({
@@ -145,9 +168,18 @@ export class ReviewController {
     });
 
     const createdReview = await review.save();
-    console.log(deposit);
     deposit.peerReviews.push(createdReview._id);
     await deposit.save();
+
+    if (newReview.invite) {
+      const invite = await this.inviteService.findById(newReview.invite);
+      if (!invite || !invite.data) {
+        throw new NotFoundException('Invite not found');
+      }
+      invite.data.reviewId = createdReview._id;
+      invite.markModified('data');
+      await invite.save();
+    }
 
     await this.eventService.create({
       eventType: EVENT_TYPE.REVIEW_CREATED,
@@ -156,12 +188,13 @@ export class ReviewController {
         userId: deposit.owner,
         deposit: {
           title: deposit.title,
-          id: deposit._id,
+          _id: deposit._id,
         },
       },
     });
-
-    return createdReview;
+    const reviewDTO = plainToClassCustom(ReviewDTO, createdReview);
+    reviewDTO.actions = this.authorizationService.getSubjectActions(user, review);
+    return reviewDTO;
   }
 
   @Patch(':id')
@@ -169,12 +202,9 @@ export class ReviewController {
     @Req() req: Request,
     @Body() payload: UpdateReviewDTO,
     @Param('id') id: string,
-  ): Promise<Review> {
-    const user = await this.userService.findOne({});
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }    const review = await this.reviewService.findOne({
+  ): Promise<ReviewDTO> {
+    const auth0Profile = req.user as Auth0UserProfile;
+    const review = await this.reviewService.findOne({
       _id: id,
     });
 
@@ -182,13 +212,14 @@ export class ReviewController {
       throw new NotFoundException('Review not found');
     }
 
+    const user = await this.userService.findOne({ userId: auth0Profile.sub });
+
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (!this.canUpdateReview(user, review)) {
-      throw new UnauthorizedException();
-    }
+    const ability = defineAbilityFor(user);
+    canDo(ability, 'update', review);
 
     // If review is published then restrict the update
     if (review.status === REVIEW_STATUS.published) {
@@ -197,28 +228,32 @@ export class ReviewController {
     }
 
     Object.assign(review, payload);
-    return review.save();
+    const reviewUpdated = await review.save();
+    const reviewDTO = plainToClassCustom(ReviewDTO, reviewUpdated, { groups: ['owner'] });
+    reviewDTO.actions = this.authorizationService.getSubjectActions(user, review);
+    return reviewDTO;
   }
 
   @Delete(':id')
   async deleteReview(
     @Req() req: Request,
     @Param('id') id: string,
-  ): Promise<Review> {
-    const user = await this.userService.findOne({});
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+  ): Promise<ReviewDTO> {
+    const auth0Profile = req.user as Auth0UserProfile;
     const review = await this.reviewService.findOne({ _id: id });
 
     if (!review) {
       throw new NotFoundException('Review not found');
     }
 
-    if (!this.canDeleteReview(user, review)) {
-      throw new UnauthorizedException();
+    const user = await this.userService.findOne({ userId: auth0Profile.sub });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
+
+    const ability = defineAbilityFor(user);
+    canDo(ability, 'delete', review);
 
     review.depopulate('deposit');
     const deposit = await this.depositService.findById(review.deposit.toString());
@@ -232,20 +267,20 @@ export class ReviewController {
 
     // Delete review files
     if (review.file) {
-      const s3Object = `${review.deposit}/${review._id}/${review.file.filename}`;
-      this.storageService.delete(s3Object);
+      const objectKey = `${review.deposit}/${review._id}/${review.file.filename}`;
+      await this.storageService.delete(objectKey);
     }
 
-    return review.remove();
+    const reviewDeleted = await review.remove();
+    return plainToClassCustom(ReviewDTO, reviewDeleted);
   }
 
   @Post(':id/file')
-  @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
     @Param('id') id: string,
-    @Req() req: Request,
-    @UploadedFile() file: any): Promise<Review> {
-
+    @Body() payload: CreateFileDTO,
+    @Req() req: Request
+  ): Promise<{ signedUrl: string }> {
     const review = await this.reviewService.findById(id);
 
     if (!review) {
@@ -256,40 +291,51 @@ export class ReviewController {
       throw new UnauthorizedException('Review should be draft');
     }
 
-    if (!ALLOWED_FILE_EXTENSIONS.includes(extname(file.originalname))) {
-      throw new UnauthorizedException('File type not allowed');
+    const file = payload.file;
+
+    // File extension to lower case
+    const fileExtension = extname(file.name).toLowerCase();
+    const filename = file.name.toLowerCase();
+
+    if (!ALLOWED_FILE_EXTENSIONS.includes(fileExtension)) {
+      throw new UnauthorizedException('Invalid extension file');
     }
+
+    const fileMetadata = {
+      filename: filename,
+      contentType: file.type,
+      contentLength: file.size,
+      tags: []
+    };
 
     // Delete previous file if exist
     review.depopulate('deposit');
     if (review.file) {
       console.log('Delete existing file');
-      const previousS3Object = `${review.deposit}/${review._id}/${review.file.filename}`;
-      this.storageService.delete(previousS3Object);
+      const previousObjectKey = `${review.deposit}/${review._id}/${review.file.filename}`;
+      await this.storageService.delete(previousObjectKey);
     }
 
-    const hash = createHash('sha256').update(file.buffer).digest('hex');
-    review.file = {
-      filename: file.originalname,
-      contentType: file.mimetype,
-      keccak256: hash,
-      contentLength: file.size,
+    review.file = fileMetadata;
+
+    const objectKey = `${review.deposit}/${review._id}/${review.file.filename}`;
+    const params = {
+      Key: objectKey
     };
 
-    const s3Object = `${review.deposit}/${review._id}/${review.file.filename}`;
-    console.log('Saving file:', review.file);
-    console.log('S3 path:', s3Object);
+    const signedUrl = this.storageService.getSignedUrl('putObject', params);
 
-    this.storageService.save(s3Object, file.buffer);
-
-    return review.save();
+    await review.save();
+    return { signedUrl };
   }
 
-  @Get(':id/file')
+  // TODO filename parameter is unnecessary but file-list component (UI) uses it like when it is a publication file.
+  @Get(':id/file/:filename')
   async getReviewFile(
     @Param('id') id: string,
+    @Param('filename') filename: string,
     @Res() response: Response,
-  ): Promise<any> {
+  ): Promise<unknown> {
     const review = await this.reviewService.findById(id);
     if (!review) {
       throw new NotFoundException('Review not found');
@@ -299,10 +345,13 @@ export class ReviewController {
       throw new NotFoundException('File not found');
     }
 
+    if (review.status == REVIEW_STATUS.draft) {
+      throw new UnauthorizedException('Review should not be draft');
+    }
+
     review.depopulate('deposit');
-    const s3Object = `${review.deposit}/${review._id}/${review.file.filename}`;
-    console.log('s3Object', s3Object);
-    const fileStream = this.storageService.get(s3Object);
+    const objectKey = `${review.deposit}/${review._id}/${review.file.filename}`;
+    const fileStream = this.storageService.get(objectKey);
 
     response.setHeader(
       'Content-Type',
@@ -310,82 +359,5 @@ export class ReviewController {
     );
 
     return fileStream.pipe(response);
-  }
-
-
-  canReadReview(user: User | null, review: Review): boolean {
-    const hasRights = false;
-
-    // owner has access
-    if (user && review.owner === user.userId) {
-      return true;
-    }
-
-    // admin has access
-    if (user && user.roles.includes(`admin`)) {
-      return true;
-    }
-
-    if (review.status === REVIEW_STATUS.published) {
-      return true;
-    }
-
-    return hasRights;
-  }
-
-  canUpdateReview(user: User, review: Review): boolean {
-    let hasRights = false;
-
-    // If deposit is published then restrict the update
-    if (user.userId === review.owner && review.status === REVIEW_STATUS.draft) {
-      hasRights = true;
-    }
-
-    // Admin can update
-    if (user.roles.includes('admin')) {
-      hasRights = true;
-    }
-
-    return hasRights;
-  }
-
-  canDeleteReview(user: User, review: Review): boolean {
-    let hasRights = false;
-
-    // If deposit is published then restrict the update
-    if (user.userId === review.owner && review.status === REVIEW_STATUS.draft) {
-      hasRights = true;
-    }
-
-    // Admin can update
-    if (user.roles.includes('admin')) {
-      hasRights = true;
-    }
-
-    return hasRights;
-  }
-
-  canCreateReview(user: User, deposit: Deposit): boolean {
-    // Admin can update
-    if (user.roles.includes('admin')) {
-      return true;
-    }
-
-    // User needs to be onboarded
-    if (!user.isReviewer) {
-      return false;
-    }
-
-    // Owner of the deposit cannot create review
-    if (deposit.owner === user.userId) {
-      return false;
-    }
-
-    // Deposits in draft cannot be reviewed yet
-    if (deposit.status === DEPOSIT_STATUS.draft) {
-      return false;
-    }
-
-    return true;
   }
 }

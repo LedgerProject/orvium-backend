@@ -1,12 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { Exclude, Expose } from 'class-transformer';
-import { createHash } from 'crypto';
-import { Community } from '../communities/communities.schema';
-import { Logger } from '@nestjs/common';
-import { IsBoolean, IsEmail, IsNumber, IsOptional, IsString, IsUrl, ValidateIf, } from 'class-validator';
-import { IsNotBlankValidator } from '../isNotBlankValidator';
 import * as mongoose from 'mongoose';
+import { Document } from 'mongoose';
+import { createHash } from 'crypto';
+import { CommunityDocument } from '../communities/communities.schema';
+import { Logger } from '@nestjs/common';
 
 export enum USER_TYPE {
   student = 'student',
@@ -17,22 +14,12 @@ export enum USER_TYPE {
 }
 
 
-@Exclude()
-export class UserDto {
-  @Expose() email: string;
-  @Expose() firstName: string;
-  @Expose() lastName: string;
-  @Expose() communities: mongoose.Schema.Types.ObjectId[];
-
-  constructor(partial: Partial<any>) {
-    Object.assign(this, partial);
-  }
-}
-
 @Schema({ collection: 'profile', timestamps: true })
-export class User extends Document {
+export class UserDocument extends Document {
   @Prop({ required: true })
-  userId: string;
+  userId!: string;
+  @Prop({ required: true, unique: true, trim: true, lowercase: true })
+  nickname!: string;
 
   // Personal Details
   @Prop({ unique: true, sparse: true, trim: true, lowercase: true })
@@ -46,51 +33,54 @@ export class User extends Document {
   @Prop({ trim: true }) blog?: string;
   @Prop({ trim: true }) role?: string;
   @Prop([{
-    ref: 'Community',
+    ref: CommunityDocument.name,
     required: true,
     type: mongoose.Schema.Types.ObjectId,
     default: []
   }])
-  communities: mongoose.Schema.Types.ObjectId[];
+  communities!: mongoose.Schema.Types.ObjectId[];
 
   // Internal fields
-  @Prop({ required: true, default: false }) emailConfirmed: boolean;
+  @Prop({ required: true, default: false }) emailConfirmed!: boolean;
   @Prop() emailConfirmedOn?: Date;
   @Prop() emailChangedOn?: Date;
-  @Prop({ required: true, default: 20 }) invitationsAvailable: number;
-  @Prop({ required: true }) inviteToken: string;
+  @Prop({ required: true, default: 20 }) invitationsAvailable!: number;
+  @Prop({ required: true }) inviteToken!: string;
   @Prop() invitedBy?: string;
   @Prop() gravatar?: string;
-  @Prop({ required: true, default: 0 }) percentageComplete: number;
+  @Prop({ required: true, default: 0 }) percentageComplete!: number;
 
   @Prop({ required: true, default: [] })
-  disciplines: string[];
+  disciplines!: string[];
 
   @Prop() simultaneousReviews?: number;
   @Prop({ required: true, default: false })
-  isReviewer: boolean;
+  isReviewer!: boolean;
 
   @Prop({ required: true, default: false })
-  isOnboarded: boolean;
+  isOnboarded!: boolean;
 
   @Prop({
     required: true,
     enum: Object.values(USER_TYPE),
     default: USER_TYPE.citizen
   })
-  userType: USER_TYPE;
+  userType!: USER_TYPE;
 
   @Prop() institution?: string;
   @Prop({ required: true, default: [] })
-  roles: string[];
+  roles!: string[];
 
   @Prop({ required: true, default: [] })
-  starredDeposits: string[];
+  starredDeposits!: string[];
+
+  @Prop({ required: true, default: false })
+  acceptedTC!: boolean;
 }
 
-export const UserSchema = SchemaFactory.createForClass(User);
+export const UserSchema = SchemaFactory.createForClass(UserDocument);
 
-UserSchema.pre<User>('save', function (next) {
+UserSchema.pre<UserDocument>('save', function (next) {
   Logger.debug('User document pre save hook');
   if (this.email) {
     this.gravatar = createHash('md5').update(this.email).digest('hex');
@@ -100,7 +90,7 @@ UserSchema.pre<User>('save', function (next) {
   }
 
   this.isReviewer = false;
-  if (this.disciplines && this.simultaneousReviews && this.isOnboarded) {
+  if (this.disciplines && this.simultaneousReviews && this.isOnboarded && this.emailConfirmed) {
     this.isReviewer = true;
   }
 
@@ -110,25 +100,7 @@ UserSchema.pre<User>('save', function (next) {
   next();
 });
 
-
-export class UpdateUserDTO {
-  @IsOptional() @IsEmail() email: string;
-  @IsOptional() @IsString() @IsNotBlankValidator() firstName: string;
-  @IsOptional() @IsString() @IsNotBlankValidator() lastName: string;
-  @IsOptional() @IsString() aboutMe: string;
-  @IsOptional() @ValidateIf(o => o.orcid !== '') @IsUrl() orcid: string;
-  @IsOptional() @ValidateIf(o => o.linkedin !== '') @IsUrl() linkedin: string;
-  @IsOptional() @ValidateIf(o => o.blog !== '') @IsUrl() blog: string;
-  @IsOptional() @IsString() role: string;
-  @IsOptional() @IsString({ each: true }) starredDeposits: string[];
-  @IsOptional() @IsBoolean() isOnboarded: boolean;
-  @IsOptional() @IsNumber() simultaneousReviews: number;
-  @IsOptional() @IsString() userType: USER_TYPE;
-  @IsOptional() communities: mongoose.Schema.Types.ObjectId[];
-  @IsOptional() @IsString({ each: true }) disciplines: string[];
-}
-
-function calculateProfileCompletion(user: User): number {
+function calculateProfileCompletion(user: UserDocument): number {
   let fields = ['firstName', 'lastName', 'email', 'blog', 'aboutMe'];
   if (user.userType != USER_TYPE.citizen) {
     fields = fields.concat(['role', 'orcid', 'linkedin', 'disciplines']);

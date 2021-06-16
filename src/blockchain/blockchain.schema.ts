@@ -1,40 +1,28 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { Exclude, Expose } from 'class-transformer';
-
-@Exclude()
-export class BlockchainNetworkDTO {
-  @Expose() name: string;
-  @Expose() displayName: string;
-  @Expose() networkId: number;
-  @Expose() appAddress: string;
-  @Expose() escrowAddress: string;
-  @Expose() tokenAddress: string;
-  @Expose() explorerUrl: string;
-}
 
 @Schema({ collection: 'network', timestamps: true })
-export class BlockchainNetwork extends Document {
-  @Prop()
-  name: string;
+export class BlockchainNetworkDocument extends Document {
+  @Prop({ required: true })
+  name!: string;
 
-  @Prop()
-  displayName: string;
+  @Prop({ required: true })
+  displayName!: string;
 
-  @Prop({ unique: true })
-  networkId: number;
+  @Prop({ required: true, unique: true })
+  networkId!: number;
 
-  @Prop()
-  appAddress: string;
+  @Prop({ required: true })
+  appAddress!: string;
 
-  @Prop()
-  escrowAddress: string;
+  @Prop({ required: true })
+  escrowAddress!: string;
 
-  @Prop()
-  tokenAddress: string;
+  @Prop({ required: true })
+  tokenAddress!: string;
 
-  @Prop()
-  explorerUrl: string;
+  @Prop({ required: true })
+  explorerUrl!: string;
 }
 
-export const BlockchainNetworkSchema = SchemaFactory.createForClass(BlockchainNetwork);
+export const BlockchainNetworkSchema = SchemaFactory.createForClass(BlockchainNetworkDocument);

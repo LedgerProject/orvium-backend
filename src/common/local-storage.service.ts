@@ -2,10 +2,15 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { IStorageService } from './storage-service.interface';
 import * as stream from 'stream';
 import { Readable } from 'stream';
-import { readFileSync, unlinkSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+
 @Injectable()
 export class LocalStorageService implements IStorageService {
   constructor() {
+  }
+
+  getSignedUrl(operation: string, params: unknown): string {
+    throw new Error('Method not implemented.');
   }
 
   get(objectKey: string): stream.Readable {
@@ -19,7 +24,7 @@ export class LocalStorageService implements IStorageService {
     }
     try {
       writeFileSync(`/tmp/${objectKey}`, buffer);
-    } catch(err) {
+    } catch (err) {
       throw new InternalServerErrorException('Unable to upload file');
     }
     return;
@@ -27,8 +32,8 @@ export class LocalStorageService implements IStorageService {
 
   async delete(objectKey: string): Promise<void> {
     try {
-      unlinkSync(`/tmp/${objectKey}`)
-    } catch(err) {
+      unlinkSync(`/tmp/${objectKey}`);
+    } catch (err) {
       throw new InternalServerErrorException('Unable to delete file');
     }
     return;

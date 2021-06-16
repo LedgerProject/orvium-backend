@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { BlockchainService } from './blockchain.service';
-import { BlockchainNetworkDTO } from './blockchain.schema';
-import { plainToClass } from 'class-transformer';
+import { BlockchainNetworkDTO } from '../dtos/blockchain-network.dto';
+import { plainToClassCustom } from '../utils/transformer';
 
 @Controller('blockchain')
 export class BlockchainController {
@@ -11,6 +11,6 @@ export class BlockchainController {
   @Get()
   async findAll(): Promise<BlockchainNetworkDTO[]> {
     const blockchainNetworks = await this.blochainService.find({});
-    return plainToClass(BlockchainNetworkDTO, blockchainNetworks);
+    return plainToClassCustom(BlockchainNetworkDTO, blockchainNetworks);
   }
 }

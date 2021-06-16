@@ -2,10 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DepositController } from './deposit.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { environment } from '../environments/environment';
-import { DepositModule } from './deposit.module';
 import { UsersModule } from '../users/users.module';
 import { EventModule } from '../event/event.module';
-import { LocalStorageService } from '../local-storage.service';
+import { DataciteModule } from '../datacite/datacite.module';
+import { DepositService } from './deposit.service';
+import { CommunitiesService } from '../communities/communities.service';
+import { HttpModule } from '@nestjs/common';
+import { AuthorizationService } from '../authorization/authorization.service';
+import { LocalStorageService } from '../common/local-storage.service';
 
 describe('Deposit Controller', () => {
   let controller: DepositController;
@@ -14,17 +18,18 @@ describe('Deposit Controller', () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [
         MongooseModule.forRoot(environment.test.mongoUri),
-        DepositModule,
         UsersModule,
         EventModule,
-      ],
-      providers: [
-        {
-          provide: 'IStorageService',
-          useClass: LocalStorageService
-        }
+        DataciteModule,
+        HttpModule
       ],
       controllers: [DepositController],
+      providers: [
+        { provide: DepositService, useValue: {} },
+        { provide: LocalStorageService, useValue: {} },
+        { provide: CommunitiesService, useValue: {} },
+        { provide: AuthorizationService, useValue: {} },
+      ]
     }).compile();
 
     controller = module.get<DepositController>(DepositController);

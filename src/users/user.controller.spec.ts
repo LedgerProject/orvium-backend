@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { environment } from '../environments/environment';
 import { HttpModule } from '@nestjs/common';
 import { InstitutionModule } from '../institution/institution.module';
+import { AuthorizationService } from '../authorization/authorization.service';
 
 describe('User Controller', () => {
   let controller: UserController;
@@ -20,6 +21,9 @@ describe('User Controller', () => {
         EventModule,
         InstitutionModule,
       ],
+      providers: [
+        { provide: AuthorizationService, useValue: {} },
+      ]
     }).compile();
 
     controller = module.get<UserController>(UserController);

@@ -2,13 +2,11 @@ import { Module } from '@nestjs/common';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AppNotification, AppNotificationSchema } from './notification.schema';
-import { UsersModule } from 'src/users/users.module';
+import { AppNotificationDocument, AppNotificationSchema } from './notification.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: AppNotification.name, schema: AppNotificationSchema }]),
-    UsersModule
+    MongooseModule.forFeature([{ name: AppNotificationDocument.name, schema: AppNotificationSchema }]),
   ],
   controllers: [NotificationController],
   providers: [NotificationService],

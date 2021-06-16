@@ -1,25 +1,26 @@
 import { Controller, Get, Param, Patch, Req } from '@nestjs/common';
 import { NotificationService } from './notification.service';
-import { AppNotification } from './notification.schema';
 import { Request } from 'express';
-import { UsersService } from '../users/users.service';
+import { Auth0UserProfile } from 'auth0-js';
+import { AppNotificationDTO } from '../dtos/notification.dto';
+import { plainToClassCustom } from '../utils/transformer';
 
 @Controller('notifications')
 export class NotificationController {
   constructor(
     private readonly notificationService: NotificationService,
-    private readonly userService: UsersService,
-
   ) {
   }
 
   @Get('myNotifications')
   async getMyNotifications(
     @Req() request: Request,
-  ): Promise<AppNotification[]> {
-    const user = await this.userService.findOne({});
-    return await this.notificationService.find(
-      { userId: user?.userId, isRead: false });
+  ): Promise<AppNotificationDTO[]> {
+    const auth0Profile = request.user as Auth0UserProfile;
+    const notifications = await this.notificationService.find(
+      { userId: auth0Profile.sub, isRead: false });
+
+    return plainToClassCustom(AppNotificationDTO, notifications);
   }
 
 
@@ -27,10 +28,12 @@ export class NotificationController {
   async markNotificationAsRead(
     @Req() request: Request,
     @Param('id') id: string,
-  ): Promise<AppNotification | null> {
-    const user = await this.userService.findOne({});
-    return await this.notificationService.findOneAndUpdate(
-      { userId: user?.userId, _id: id },
+  ): Promise<AppNotificationDTO | null> {
+    const auth0Profile = request.user as Auth0UserProfile;
+    const notification = await this.notificationService.findOneAndUpdate(
+      { userId: auth0Profile.sub, _id: id },
       { isRead: true });
+
+    return plainToClassCustom(AppNotificationDTO, notification);
   }
 }

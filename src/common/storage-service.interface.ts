@@ -8,4 +8,6 @@ export interface IStorageService {
   save(s3Object: string, buffer: Buffer | Uint8Array | Blob | string | Readable): void;
 
   delete(objectKey: string): void;
+
+  getSignedUrl(operation: string, params: unknown): string;
 }

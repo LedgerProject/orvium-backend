@@ -1,11 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
 import { Document } from 'mongoose';
-import { Review } from '../review/review.schema';
-import { IsDate, IsJSON, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { Community } from '../communities/communities.schema';
-import { IsNotBlankValidator } from '../isNotBlankValidator';
+import { CommunityDocument } from '../communities/communities.schema';
 import { v4 as uuidv4 } from 'uuid';
+import { FileMetadata } from '../dtos/filemetadata.dto';
+import { Reference } from '../dtos/reference.dto';
+import { AuthorDTO } from '../dtos/author.dto';
 
 export enum PUBLICATION_TYPE {
   book = 'book',
@@ -47,21 +47,55 @@ export enum DEPOSIT_STATUS {
   preprint = 'preprint'
 }
 
-export class Citation {
-  apa: string;
+export enum CREDIT_TYPE {
+  methodology = 'methodology',
+  conceptualization = 'conceptualization',
+  software = 'software',
+  validation = 'validation',
+  formalAnalysis = 'formal analysis',
+  investigation = 'investigation',
+  resources = 'resources',
+  dataCuration = 'data curation',
+  writingOriginalDraft = 'writing original draft',
+  writingReviewEditing = 'writing review and editing',
+  visualization = 'visualization',
+  supervision = 'supervision',
+  projectAdministration = 'project administration',
+  fundingAcquisition = 'funding acquisition',
 }
 
 export class Author {
-  name: string;
-  surname: string;
+  userId?: string;
+  name!: string;
+  surname!: string;
+  nickname?: string;
   email?: string;
   orcid?: string;
-  credit?: string[];
+  credit: CREDIT_TYPE[] = [];
+  gravatar?: string;
 }
 
-export class Reference {
-  reference: string;
-  url: string;
+export class CommentDTO {
+  id!: string;
+  author!: AuthorDTO;
+  createdOn!: Date;
+  content!: string;
+  gravatar?: string;
+  tags!: string[];
+}
+
+export class CommentDocument {
+  id: mongoose.Types.ObjectId;
+  author!: Author;
+  createdOn: Date;
+  content!: string;
+  gravatar?: string;
+  tags: string[] = [];
+
+  constructor() {
+    this.createdOn = new Date();
+    this.id = new mongoose.Types.ObjectId();
+  }
 }
 
 export enum BIBTEX_PUBLICATION_TYPES {
@@ -80,6 +114,13 @@ export enum BIBTEX_PUBLICATION_TYPES {
   proceedings = 'proceedings',
   techreport = 'techreport',
   unpublished = 'unpublished',
+}
+
+export enum COMMENT_TAGS {
+  author = 'author',
+  reviewer = 'reviewer',
+  admin = 'admin',
+  moderator = 'moderator'
 }
 
 export const bibtexPublicationType = new Map<PUBLICATION_TYPE, BIBTEX_PUBLICATION_TYPES>(
@@ -103,123 +144,106 @@ export const bibtexPublicationType = new Map<PUBLICATION_TYPE, BIBTEX_PUBLICATIO
     [PUBLICATION_TYPE.other, BIBTEX_PUBLICATION_TYPES.misc],
   ]);
 
-@Schema({ collection: 'deposit', timestamps: true })
-export class Deposit extends Document {
+@Schema({ collection: 'deposit', timestamps: true, toJSON: { virtuals: true } })
+export class DepositDocument extends Document {
   @Prop({ required: true })
-  owner: string;
-
+  owner!: string;
+  @Prop({ required: true })
+  nickname!: string;
   @Prop({ required: true, trim: true })
-  title: string;
-
+  title!: string;
   @Prop({ trim: true }) abstract?: string;
   @Prop({
     required: true,
     enum: Object.values(PUBLICATION_TYPE),
-    default: PUBLICATION_TYPE.article })
-  publicationType: PUBLICATION_TYPE;
-
+    default: PUBLICATION_TYPE.article
+  })
+  publicationType!: PUBLICATION_TYPE;
   @Prop({
     required: true,
     enum: Object.values(ACCESS_RIGHT),
-    default: ACCESS_RIGHT.CC0 })
-  accessRight: ACCESS_RIGHT;
-
+    default: ACCESS_RIGHT.CC0
+  })
+  accessRight!: ACCESS_RIGHT;
   @Prop() submissionDate?: Date;
   @Prop() publicationDate?: Date;
-
   @Prop({
     required: true,
     enum: Object.values(DEPOSIT_STATUS),
-    default: DEPOSIT_STATUS.draft })
-  status: DEPOSIT_STATUS;
-
+    default: DEPOSIT_STATUS.draft
+  })
+  status!: DEPOSIT_STATUS;
   @Prop([{
     required: true,
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Review', default: [] }])
-  peerReviews: mongoose.Schema.Types.ObjectId[];
-
+    ref: 'ReviewDocument',
+    default: []
+  }])
+  peerReviews!: mongoose.Schema.Types.ObjectId[];
   @Prop({
     required: true,
     enum: Object.values(REVIEW_TYPE),
-    default: REVIEW_TYPE.openReview })
-  reviewType: REVIEW_TYPE;
-
+    default: REVIEW_TYPE.openReview
+  })
+  reviewType!: REVIEW_TYPE;
   @Prop([{ required: true, type: mongoose.Schema.Types.Mixed, default: [] }])
-  authors: Author[];
-
-  @Prop(mongoose.SchemaTypes.Mixed) transactions?: any;
-
+  authors!: Author[];
+  @Prop([{ type: mongoose.Schema.Types.Mixed, default: [] }])
+  comments!: CommentDocument[];
+  @Prop({ type: mongoose.SchemaTypes.Mixed })
+  transactions?: unknown;
   @Prop({ required: true, type: Array, default: [] })
-  files: any;
-
+  files!: FileMetadata[];
   @Prop() gravatar?: string;
-
   @Prop({ required: true, default: [], trim: true })
-  keywords: string[];
-
+  keywords!: string[];
   @Prop() keccak256?: string;
   @Prop({ trim: true }) doi?: string;
   @Prop({ trim: true }) url?: string;
   @Prop() pdfUrl?: string;
-
+  @Prop() presignedPDFURL?: string;
   @Prop({ required: true, default: [] })
-  disciplines: string[];
-
+  disciplines!: string[];
   @Prop({ required: true, type: [mongoose.Schema.Types.Mixed], default: [], trim: true })
-  references: Reference[];
-
+  references!: Reference[];
   @Prop({ required: true, default: Date.now })
-  createdOn: Date;
-
+  createdOn!: Date;
   @Prop() html?: string;
-  @Prop(mongoose.SchemaTypes.Mixed)
-  publicationFile?: Record<string, any>;
-
-  @Prop({ ref: 'Community' })
+  @Prop() images?: string[];
+  @Prop({ type: mongoose.SchemaTypes.Mixed })
+  publicationFile?: FileMetadata;
+  @Prop({ ref: CommunityDocument.name })
   community?: mongoose.Schema.Types.ObjectId;
-
   @Prop({ required: true, default: true })
-  isLatestVersion: boolean;
-
+  isLatestVersion!: boolean;
   @Prop({ required: true, default: 1 })
-  version: number;
-
+  version!: number;
   @Prop({
     required: true,
     default: uuidv4(),
   })
-  parent: string;
+  parent!: string;
+  @Prop({ required: true, default: true }) canBeReviewed!: boolean;
+  @Prop() gitRepository?: string;
+  @Prop() openAireIdentifier?: string;
+
+  @Prop({ required:true, default: 0 })
+  views?: number;
 }
 
-export class CreateDepositDTO {
-  @IsString() @IsNotBlankValidator({ message: 'Title should not be empty' }) title: string;
-  @IsOptional() @IsNotEmpty() community: mongoose.Schema.Types.ObjectId;
-}
+export const DepositSchema = SchemaFactory.createForClass(DepositDocument);
 
-export class UpdateDepositDTO {
-  @IsOptional() @IsString() @IsNotBlankValidator({ message: 'Title should not be empty' }) title: string;
-  @IsOptional() @IsString() abstract: string;
-  @IsOptional() @IsString() publicationType: PUBLICATION_TYPE;
-  @IsOptional() @IsString() accessRight: ACCESS_RIGHT;
-  @IsOptional() @IsDate() publicationDate: Date;
-  @IsOptional() @IsDate() submissionDate: Date;
-  @IsOptional() @IsString() status: DEPOSIT_STATUS;
-  @IsOptional() @IsString() reviewType: REVIEW_TYPE;
-  @IsOptional() authors: any;
-  @IsOptional() @IsJSON() transactions: unknown;
-  @IsOptional() @IsString({ each: true }) keywords: string[];
-  @IsOptional() @IsString() doi: string;
-  @IsOptional() @IsString({ each: true }) disciplines: string[];
-  @IsOptional() references: any;
-  @IsOptional() community: mongoose.Schema.Types.ObjectId;
-}
 
-export const DepositSchema = SchemaFactory.createForClass(Deposit);
+DepositSchema.virtual('ownerProfile', {
+  ref: 'UserDocument',
+  localField: 'owner',
+  foreignField: 'userId',
+  justOne: true
+});
 
 DepositSchema.index({
   title: 'text',
   abstract: 'text',
   'authors.name': 'text',
   'authors.surname': 'text',
-})
+});

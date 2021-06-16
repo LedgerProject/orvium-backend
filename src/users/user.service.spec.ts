@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { environment } from '../environments/environment';
-import { User, UserSchema } from './user.schema';
+import { UserDocument, UserSchema } from './user.schema';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -14,7 +14,7 @@ describe('UsersService', () => {
       ],
       imports: [
         MongooseModule.forRoot(environment.test.mongoUri),
-        MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+        MongooseModule.forFeature([{ name: UserDocument.name, schema: UserSchema }]),
       ],
     }).compile();
 

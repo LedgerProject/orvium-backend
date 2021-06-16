@@ -1,16 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model } from 'mongoose';
-import { Institution } from './institution.schema';
+import { DocumentDefinition, FilterQuery, Model } from 'mongoose';
+import { InstitutionDocument } from './institution.schema';
 
 @Injectable()
 export class InstitutionService {
   constructor(
-    @InjectModel(Institution.name) private institutionModel: Model<Institution>,
+    @InjectModel(InstitutionDocument.name) private institutionModel: Model<InstitutionDocument>,
   ) {
   }
 
-  async findOne(conditions: FilterQuery<Institution>): Promise<Institution | null> {
+  async create(filter: DocumentDefinition<InstitutionDocument>): Promise<InstitutionDocument> {
+    return this.institutionModel.create(filter);
+  }
+
+  async exists(filter: FilterQuery<InstitutionDocument>): Promise<boolean> {
+    return this.institutionModel.exists(filter);
+  }
+
+  async findOne(conditions: FilterQuery<InstitutionDocument>): Promise<InstitutionDocument | null> {
     return this.institutionModel.findOne(conditions).exec();
   }
 }

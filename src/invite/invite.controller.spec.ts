@@ -3,9 +3,10 @@ import { InviteController } from './invite.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { environment } from '../environments/environment';
 import { UsersModule } from '../users/users.module';
-import { DepositModule } from '../deposit/deposit.module';
-import { InviteModule } from './invite.module';
 import { EventModule } from '../event/event.module';
+import { DepositService } from '../deposit/deposit.service';
+import { InviteService } from './invite.service';
+import { AuthorizationService } from '../authorization/authorization.service';
 
 describe('Invite Controller', () => {
   let controller: InviteController;
@@ -14,12 +15,15 @@ describe('Invite Controller', () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [
         MongooseModule.forRoot(environment.test.mongoUri),
-        InviteModule,
         UsersModule,
-        DepositModule,
-        EventModule
+        EventModule,
       ],
       controllers: [InviteController],
+      providers: [
+        { provide: InviteService, useValue: {} },
+        { provide: DepositService, useValue: {} },
+        { provide: AuthorizationService, useValue: {} },
+      ]
     }).compile();
 
     controller = module.get<InviteController>(InviteController);

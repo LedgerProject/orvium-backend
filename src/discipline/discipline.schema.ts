@@ -2,13 +2,13 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 @Schema({ collection: 'disciplines', timestamps: true })
-export class Discipline extends Document {
+export class DisciplineDocument extends Document {
   @Prop({ required: true, unique: true, trim: true })
-  name: string;
+  name!: string;
 
   @Prop({ trim: true })
   description?: string;
 }
 
-export const DisciplineSchema = SchemaFactory.createForClass(Discipline);
+export const DisciplineSchema = SchemaFactory.createForClass(DisciplineDocument);
 

@@ -1,6 +1,6 @@
 import { BlockchainService } from './blockchain.service';
 import { Test, TestingModule } from '@nestjs/testing';
-import { BlockchainNetwork, BlockchainNetworkSchema } from './blockchain.schema';
+import { BlockchainNetworkDocument, BlockchainNetworkSchema } from './blockchain.schema';
 import { MongooseModule } from '@nestjs/mongoose';
 import { environment } from '../environments/environment';
 import { BlockchainController } from './blockchain.controller';
@@ -15,7 +15,7 @@ describe('BlockchainService', () => {
       controllers: [BlockchainController],
       imports: [
         MongooseModule.forRoot(environment.test.mongoUri),
-        MongooseModule.forFeature([{ name: BlockchainNetwork.name, schema: BlockchainNetworkSchema }]),
+        MongooseModule.forFeature([{ name: BlockchainNetworkDocument.name, schema: BlockchainNetworkSchema }]),
       ],
     }).compile();
 

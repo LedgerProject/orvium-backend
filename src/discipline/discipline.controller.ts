@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { DisciplineService } from './discipline.service';
-import { Discipline } from './discipline.schema';
+import { DisciplineDTO } from '../dtos/discipline.dto';
+import { plainToClassCustom } from '../utils/transformer';
 
 @Controller('disciplines')
 export class DisciplineController {
@@ -8,7 +9,8 @@ export class DisciplineController {
   }
 
   @Get('')
-  async getDisciplines(): Promise<Discipline[]> {
-    return await this.disciplineService.find({});
+  async getDisciplines(): Promise<DisciplineDTO[]> {
+    const disciplines = await this.disciplineService.find({});
+    return plainToClassCustom(DisciplineDTO, disciplines);
   }
 }
